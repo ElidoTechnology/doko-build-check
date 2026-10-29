@@ -1,0 +1,93 @@
+# Made by Doko Agent to build the Windows app. It runs on this branch only, and the branch is
+# deleted when the build is done; the app stays with the run for 14 days.
+name: Doko build (Windows)
+on:
+  push:
+    branches: ['doko/build-**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Build the Windows app
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Wrap the web app for Windows
+        shell: bash
+        run: |
+          set -e
+          SHELL_DIR="$(cd .. && pwd)/doko-shell"
+          rm -rf "$SHELL_DIR" && mkdir -p "$SHELL_DIR/www"
+          cp -R "."/. "$SHELL_DIR/www/"
+          rm -rf "$SHELL_DIR/www/.git" "$SHELL_DIR/www/.github" "$SHELL_DIR/www/node_modules"
+          test -f "$SHELL_DIR/www/index.html" || { echo "There is no index.html in .: the app needs one to start from."; exit 1; }
+          cd "$SHELL_DIR"
+          cat > package.json <<'DOKO_JSON'
+          {
+            "name": "momo-ghar",
+            "version": "1.0.0",
+            "description": "Momo Ghar",
+            "author": "Momo Ghar",
+            "main": "main.js",
+            "build": {
+              "appId": "com.dokoagent.momoghar",
+              "productName": "Momo Ghar",
+              "files": [
+                "main.js",
+                "www/**/*"
+              ],
+              "directories": {
+                "output": "dist"
+              },
+              "win": {
+                "target": "portable"
+              },
+              "linux": {
+                "target": "AppImage"
+              },
+              "mac": {
+                "target": "dmg",
+                "identity": null
+              }
+            }
+          }
+          DOKO_JSON
+          cat > main.js <<'DOKO_JS'
+          const { app, BrowserWindow } = require("electron");
+          const path = require("path");
+          app.whenReady().then(function () {
+            const win = new BrowserWindow({ width: 1200, height: 800, autoHideMenuBar: true });
+            win.loadFile(path.join(__dirname, "www", "index.html"));
+          });
+          app.on("window-all-closed", function () { app.quit(); });
+          DOKO_JS
+          npm install --save-dev electron@31 electron-builder@24
+      - name: Build the Windows app
+        shell: bash
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: "false" }
+        run: |
+          set -e
+          SHELL_DIR="$(cd .. && pwd)/doko-shell"
+          cd "$SHELL_DIR"
+          npx electron-builder --win --publish never
+      - name: Collect the app
+        shell: bash
+        run: |
+          set -e
+          SHELL_DIR="$(cd .. && pwd)/doko-shell"
+          mkdir -p doko-out
+          cp "$SHELL_DIR"/dist/*.exe doko-out/
+      - name: Keep the app
+        uses: actions/upload-artifact@v4
+        with:
+          name: momo-ghar-windows
+          path: doko-out/
+          if-no-files-found: error
+          retention-days: 14
