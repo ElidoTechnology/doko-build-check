@@ -1,0 +1,62 @@
+# Made by Doko Agent to build the Android app. It runs on this branch only, and the branch is
+# deleted when the build is done; the app stays with the run for 14 days.
+name: Doko build (Android)
+on:
+  push:
+    branches: ['doko/build-**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Build the Android app
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Wrap the web app for Android
+        shell: bash
+        run: |
+          set -e
+          SHELL_DIR="$(cd .. && pwd)/doko-shell"
+          rm -rf "$SHELL_DIR" && mkdir -p "$SHELL_DIR/www"
+          cp -R "."/. "$SHELL_DIR/www/"
+          rm -rf "$SHELL_DIR/www/.git" "$SHELL_DIR/www/.github" "$SHELL_DIR/www/node_modules"
+          test -f "$SHELL_DIR/www/index.html" || { echo "There is no index.html in .: the app needs one to start from."; exit 1; }
+          cd "$SHELL_DIR"
+          npm init -y > /dev/null
+          npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+          npx cap init "Momo Ghar" "com.dokoagent.momoghar" --web-dir www
+          npx cap add android
+      - name: Build the APK
+        shell: bash
+        run: |
+          set -e
+          cd "$(cd .. && pwd)/doko-shell/android"
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+      - name: Collect the app
+        shell: bash
+        run: |
+          set -e
+          mkdir -p doko-out
+          cd "$(cd .. && pwd)/doko-shell/android"
+          find . -path "*/build/outputs/apk/*" -name "*.apk" | head -1 | xargs -I{} cp {} "$GITHUB_WORKSPACE/doko-out/momo-ghar.apk"
+          test -f "$GITHUB_WORKSPACE/doko-out/momo-ghar.apk"
+      - name: Keep the app
+        uses: actions/upload-artifact@v4
+        with:
+          name: momo-ghar-android
+          path: doko-out/
+          if-no-files-found: error
+          retention-days: 14
